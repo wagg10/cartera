@@ -31,6 +31,13 @@ type Props = {
   nombreCliente: string
   onCerrar: () => void
   onCobroRegistrado: () => void
+  /**
+   * En modo lectura se ocultan los formularios.
+   *
+   * RLS ya impide que un supervisor escriba, asi que esto no es la proteccion:
+   * es evitar mostrar un boton que fallaria al pulsarlo.
+   */
+  soloLectura?: boolean
 }
 
 type Reparto = {
@@ -112,6 +119,7 @@ export function DetalleCliente({
   nombreCliente,
   onCerrar,
   onCobroRegistrado,
+  soloLectura = false,
 }: Props) {
   const [facturas, setFacturas] = useState<FacturaSaldo[]>([])
   const [cobros, setCobros] = useState<CobroRegistrado[]>([])
@@ -196,11 +204,27 @@ export function DetalleCliente({
         {pendientes.length} factura(s) pendiente(s)
       </p>
 
+      {soloLectura && (
+        <p
+          style={{
+            margin: '8px 0 0',
+            fontSize: 12,
+            color: '#1d4ed8',
+            background: '#eff6ff',
+            border: '1px solid #93c5fd',
+            borderRadius: 6,
+            padding: '6px 10px',
+          }}
+        >
+          Vista de supervision: solo lectura.
+        </p>
+      )}
+
       {error && <p style={{ color: 'crimson' }}>{error}</p>}
       {cargando && <p>Cargando...</p>}
 
       {/* ---------- Registrar cobro ---------- */}
-      {pendientes.length > 0 && (
+      {!soloLectura && pendientes.length > 0 && (
         <section
           style={{
             border: '1px solid #d1d5db',

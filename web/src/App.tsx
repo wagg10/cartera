@@ -4,6 +4,9 @@ import { supabase } from './lib/supabase'
 import { dinero, colorMora, textoMora } from './lib/formato'
 import { DetalleCliente } from './componentes/DetalleCliente'
 import { EfectivoEnTransito, type EfectivoPendiente } from './componentes/EfectivoEnTransito'
+import { PanelSupervisor } from './componentes/PanelSupervisor'
+
+type Rol = 'vendedor' | 'supervisor' | 'administrador'
 
 export default function App() {
   const [sesion, setSesion] = useState<Session | null>(null)
@@ -19,7 +22,7 @@ export default function App() {
   }, [])
 
   if (cargando) return <p style={{ padding: 24 }}>Cargando...</p>
-  return sesion ? <Panel sesion={sesion} /> : <Login />
+  return sesion ? <Enrutador sesion={sesion} /> : <Login />
 }
 
 function Login() {
@@ -61,6 +64,80 @@ function Login() {
   )
 }
 
+type ClienteBase = { id: string; nombre_comercial: string }
+
+/**
+ * Decide que pantalla mostrar segun el rol.
+ *
+ * El rol se lee de la tabla 'perfiles', NO del JWT. El token dice quien sos;
+ * la base decide que podes hacer. Aunque alguien manipulara la interfaz para
+ * forzar la pantalla equivocada, RLS seguiria filtrando lo que puede leer.
+ */
+function Enrutador({ sesion }: { sesion: Session }) {
+  const [rol, setRol] = useState<Rol | null>(null)
+  const [nombre, setNombre] = useState<string>('')
+  const [cargando, setCargando] = useState(true)
+  const [abierto, setAbierto] = useState<ClienteBase | null>(null)
+
+  useEffect(() => {
+    supabase
+      .from('perfiles')
+      .select('rol, nombre')
+      .eq('id', sesion.user.id)
+      .single()
+      .then(({ data }) => {
+        setRol((data?.rol as Rol) ?? 'vendedor')
+        setNombre(data?.nombre ?? '')
+        setCargando(false)
+      })
+  }, [sesion.user.id])
+
+  if (cargando) return <p style={{ padding: 24 }}>Cargando perfil...</p>
+
+  const esSupervisor = rol === 'supervisor'
+
+  return (
+    <div style={{ maxWidth: 620, margin: '0 auto', padding: 16, fontFamily: 'system-ui' }}>
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h1 style={{ margin: 0, fontSize: 22 }}>Cartera</h1>
+        <button onClick={() => supabase.auth.signOut()}>Salir</button>
+      </header>
+
+      <p style={{ color: '#666', fontSize: 13, marginTop: 4 }}>
+        {nombre || sesion.user.email}
+        {esSupervisor && (
+          <span
+            style={{
+              marginLeft: 6,
+              fontSize: 11,
+              color: '#1d4ed8',
+              border: '1px solid #93c5fd',
+              borderRadius: 999,
+              padding: '1px 8px',
+            }}
+          >
+            Supervisor
+          </span>
+        )}
+      </p>
+
+      {abierto ? (
+        <DetalleCliente
+          clienteId={abierto.id}
+          nombreCliente={abierto.nombre_comercial}
+          onCerrar={() => setAbierto(null)}
+          onCobroRegistrado={() => {}}
+          soloLectura={esSupervisor}
+        />
+      ) : esSupervisor ? (
+        <PanelSupervisor onVerCliente={setAbierto} />
+      ) : (
+        <PanelVendedor onVerCliente={setAbierto} />
+      )}
+    </div>
+  )
+}
+
 type ClientePrioridad = {
   id: string
   nombre_comercial: string
@@ -71,11 +148,10 @@ type ClientePrioridad = {
   excede_limite: boolean
 }
 
-function Panel({ sesion }: { sesion: Session }) {
+function PanelVendedor({ onVerCliente }: { onVerCliente: (c: ClienteBase) => void }) {
   const [clientes, setClientes] = useState<ClientePrioridad[]>([])
   const [efectivo, setEfectivo] = useState<EfectivoPendiente[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [abierto, setAbierto] = useState<ClientePrioridad | null>(null)
 
   const cargar = useCallback(async () => {
     const [prio, efec] = await Promise.all([
@@ -94,75 +170,52 @@ function Panel({ sesion }: { sesion: Session }) {
   const totalCartera = clientes.reduce((s, c) => s + Number(c.saldo_total), 0)
 
   return (
-    <div style={{ maxWidth: 620, margin: '0 auto', padding: 16, fontFamily: 'system-ui' }}>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1 style={{ margin: 0, fontSize: 22 }}>Cartera</h1>
-        <button onClick={() => supabase.auth.signOut()}>Salir</button>
-      </header>
-      <p style={{ color: '#666', fontSize: 13, marginTop: 4 }}>{sesion.user.email}</p>
+    <>
+      {error && <p style={{ color: 'crimson' }}>{error}</p>}
 
-      {abierto ? (
-        <DetalleCliente
-          clienteId={abierto.id}
-          nombreCliente={abierto.nombre_comercial}
-          onCerrar={() => setAbierto(null)}
-          onCobroRegistrado={cargar}
-        />
-      ) : (
-        <>
-          {error && <p style={{ color: 'crimson' }}>{error}</p>}
+      <EfectivoEnTransito pendientes={efectivo} onDepositado={cargar} />
 
-          <EfectivoEnTransito pendientes={efectivo} onDepositado={cargar} />
+      <h2 style={{ fontSize: 16 }}>
+        A quien cobrar ({clientes.length}) — total {dinero(totalCartera)}
+      </h2>
 
-          <h2 style={{ fontSize: 16 }}>
-            A quien cobrar ({clientes.length}) — total {dinero(totalCartera)}
-          </h2>
+      {clientes.length === 0 && !error && <p>No hay clientes con deuda pendiente.</p>}
 
-          {clientes.length === 0 && !error && <p>No hay clientes con deuda pendiente.</p>}
-
-          {clientes.map((c) => (
-            <article
-              key={c.id}
-              onClick={() => setAbierto(c)}
-              style={{
-                border: '1px solid #e5e7eb',
-                borderLeftWidth: 4,
-                borderLeftColor: colorMora(c.dias_mora_maxima),
-                borderRadius: 8,
-                padding: 12,
-                marginBottom: 8,
-                cursor: 'pointer',
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-                <div style={{ minWidth: 0 }}>
-                  <strong>{c.nombre_comercial}</strong>
-                  {c.ruta_nombre && (
-                    <span style={{ color: '#666', fontSize: 12 }}> · {c.ruta_nombre}</span>
-                  )}
-                  <div
-                    style={{ fontSize: 13, color: colorMora(c.dias_mora_maxima), fontWeight: 600 }}
-                  >
-                    {textoMora(c.dias_mora_maxima)}
-                  </div>
-                  {c.excede_limite && (
-                    <div style={{ fontSize: 12, color: '#dc2626' }}>
-                      Supera el limite de credito
-                    </div>
-                  )}
-                </div>
-
-                <div style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                  <div style={{ fontSize: 18, fontWeight: 700 }}>{dinero(c.saldo_total)}</div>
-                  <div style={{ fontSize: 12, color: '#666' }}>
-                    {c.facturas_pendientes} factura(s)
-                  </div>
-                </div>
+      {clientes.map((c) => (
+        <article
+          key={c.id}
+          onClick={() => onVerCliente(c)}
+          style={{
+            border: '1px solid #e5e7eb',
+            borderLeftWidth: 4,
+            borderLeftColor: colorMora(c.dias_mora_maxima),
+            borderRadius: 8,
+            padding: 12,
+            marginBottom: 8,
+            cursor: 'pointer',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+            <div style={{ minWidth: 0 }}>
+              <strong>{c.nombre_comercial}</strong>
+              {c.ruta_nombre && (
+                <span style={{ color: '#666', fontSize: 12 }}> · {c.ruta_nombre}</span>
+              )}
+              <div style={{ fontSize: 13, color: colorMora(c.dias_mora_maxima), fontWeight: 600 }}>
+                {textoMora(c.dias_mora_maxima)}
               </div>
-            </article>
-          ))}
-        </>
-      )}
-    </div>
+              {c.excede_limite && (
+                <div style={{ fontSize: 12, color: '#dc2626' }}>Supera el limite de credito</div>
+              )}
+            </div>
+
+            <div style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+              <div style={{ fontSize: 18, fontWeight: 700 }}>{dinero(c.saldo_total)}</div>
+              <div style={{ fontSize: 12, color: '#666' }}>{c.facturas_pendientes} factura(s)</div>
+            </div>
+          </div>
+        </article>
+      ))}
+    </>
   )
 }
