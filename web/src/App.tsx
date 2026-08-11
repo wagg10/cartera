@@ -3,6 +3,7 @@ import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
 import { dinero, colorMora, textoMora } from './lib/formato'
 import { DetalleCliente } from './componentes/DetalleCliente'
+import { EfectivoEnTransito, type EfectivoPendiente } from './componentes/EfectivoEnTransito'
 
 export default function App() {
   const [sesion, setSesion] = useState<Session | null>(null)
@@ -70,23 +71,12 @@ type ClientePrioridad = {
   excede_limite: boolean
 }
 
-type EfectivoPendiente = {
-  cobro_id: string
-  nombre_comercial: string
-  monto: string
-  alerta_deposito: boolean
-}
-
 function Panel({ sesion }: { sesion: Session }) {
   const [clientes, setClientes] = useState<ClientePrioridad[]>([])
   const [efectivo, setEfectivo] = useState<EfectivoPendiente[]>([])
   const [error, setError] = useState<string | null>(null)
-
-  // Cliente abierto en detalle. null = mostrando la lista.
   const [abierto, setAbierto] = useState<ClientePrioridad | null>(null)
 
-  // useCallback evita recrear la funcion en cada render, para poder pasarla
-  // como prop al detalle sin que dispare efectos innecesarios.
   const cargar = useCallback(async () => {
     const [prio, efec] = await Promise.all([
       supabase.from('v_priorizacion_cobranza').select('*'),
@@ -102,13 +92,10 @@ function Panel({ sesion }: { sesion: Session }) {
   }, [cargar])
 
   const totalCartera = clientes.reduce((s, c) => s + Number(c.saldo_total), 0)
-  const totalEfectivo = efectivo.reduce((s, e) => s + Number(e.monto), 0)
 
   return (
     <div style={{ maxWidth: 620, margin: '0 auto', padding: 16, fontFamily: 'system-ui' }}>
-      <header
-        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-      >
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h1 style={{ margin: 0, fontSize: 22 }}>Cartera</h1>
         <button onClick={() => supabase.auth.signOut()}>Salir</button>
       </header>
@@ -125,29 +112,7 @@ function Panel({ sesion }: { sesion: Session }) {
         <>
           {error && <p style={{ color: 'crimson' }}>{error}</p>}
 
-          {efectivo.length > 0 && (
-            <section
-              style={{
-                border: '1px solid #fbbf24',
-                background: '#fffbeb',
-                borderRadius: 8,
-                padding: 12,
-                marginBottom: 16,
-              }}
-            >
-              <strong>Efectivo sin depositar: {dinero(totalEfectivo)}</strong>
-              <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 14 }}>
-                {efectivo.map((e) => (
-                  <li key={e.cobro_id}>
-                    {e.nombre_comercial} — {dinero(e.monto)}
-                    {e.alerta_deposito && (
-                      <span style={{ color: '#dc2626', fontWeight: 600 }}> (mas de 24h)</span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
+          <EfectivoEnTransito pendientes={efectivo} onDepositado={cargar} />
 
           <h2 style={{ fontSize: 16 }}>
             A quien cobrar ({clientes.length}) — total {dinero(totalCartera)}
@@ -176,11 +141,7 @@ function Panel({ sesion }: { sesion: Session }) {
                     <span style={{ color: '#666', fontSize: 12 }}> · {c.ruta_nombre}</span>
                   )}
                   <div
-                    style={{
-                      fontSize: 13,
-                      color: colorMora(c.dias_mora_maxima),
-                      fontWeight: 600,
-                    }}
+                    style={{ fontSize: 13, color: colorMora(c.dias_mora_maxima), fontWeight: 600 }}
                   >
                     {textoMora(c.dias_mora_maxima)}
                   </div>

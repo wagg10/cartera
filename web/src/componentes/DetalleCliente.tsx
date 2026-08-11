@@ -14,15 +14,25 @@ type FacturaSaldo = {
   dias_vencida: number
 }
 
+type CobroRegistrado = {
+  id: string
+  monto: string
+  medio: 'efectivo' | 'deposito_directo'
+  estado: 'recibido' | 'depositado' | 'confirmado' | 'anulado'
+  recibido_en: string
+  deposito_en: string | null
+  deposito_banco: string | null
+  deposito_comprobante: string | null
+  notas: string | null
+}
+
 type Props = {
   clienteId: string
   nombreCliente: string
   onCerrar: () => void
-  /** Se llama tras registrar un cobro, para que la lista se recargue. */
   onCobroRegistrado: () => void
 }
 
-/** Una linea de la previsualizacion: cuanto recibe cada factura. */
 type Reparto = {
   numero: string
   aplicar: number
@@ -32,9 +42,8 @@ type Reparto = {
 /**
  * Calcula como se repartiria un cobro, sin registrarlo.
  *
- * Replica la logica de la funcion registrar_cobro de Postgres para poder
- * mostrarla ANTES de confirmar. La base de datos sigue siendo la autoridad:
- * esto es solo una vista previa para que el vendedor sepa que va a pasar.
+ * Replica la logica de registrar_cobro para mostrarla ANTES de confirmar.
+ * La base de datos sigue siendo la autoridad: esto es solo una vista previa.
  */
 function calcularReparto(monto: number, facturas: FacturaSaldo[]): Reparto[] {
   const ordenadas = [...facturas]
@@ -51,19 +60,61 @@ function calcularReparto(monto: number, facturas: FacturaSaldo[]): Reparto[] {
     if (restante <= 0) break
     const saldo = Number(f.saldo)
     const aplicar = Math.min(restante, saldo)
-    reparto.push({
-      numero: f.numero,
-      aplicar,
-      saldoResultante: saldo - aplicar,
-    })
+    reparto.push({ numero: f.numero, aplicar, saldoResultante: saldo - aplicar })
     restante -= aplicar
   }
 
   return reparto
 }
 
-export function DetalleCliente({ clienteId, nombreCliente, onCerrar, onCobroRegistrado }: Props) {
+/**
+ * Presentacion segun medio de pago y estado.
+ *
+ * El caso que mas importa distinguir es 'efectivo / recibido': el cliente ya
+ * pago, pero el dinero sigue en poder del vendedor. Se marca en ambar porque
+ * representa una obligacion pendiente suya, no del cliente.
+ */
+function estiloEstado(c: CobroRegistrado): {
+  etiqueta: string
+  color: string
+  fondo: string
+  borde: string
+} {
+  if (c.estado === 'anulado') {
+    return { etiqueta: 'Anulado', color: '#6b7280', fondo: '#f9fafb', borde: '#d1d5db' }
+  }
+  if (c.medio === 'efectivo' && c.estado === 'recibido') {
+    return {
+      etiqueta: 'Efectivo · sin depositar',
+      color: '#92400e',
+      fondo: '#fffbeb',
+      borde: '#fbbf24',
+    }
+  }
+  if (c.medio === 'efectivo') {
+    return {
+      etiqueta: 'Efectivo · depositado',
+      color: '#15803d',
+      fondo: '#f0fdf4',
+      borde: '#86efac',
+    }
+  }
+  return {
+    etiqueta: 'Deposito del cliente',
+    color: '#1d4ed8',
+    fondo: '#eff6ff',
+    borde: '#93c5fd',
+  }
+}
+
+export function DetalleCliente({
+  clienteId,
+  nombreCliente,
+  onCerrar,
+  onCobroRegistrado,
+}: Props) {
   const [facturas, setFacturas] = useState<FacturaSaldo[]>([])
+  const [cobros, setCobros] = useState<CobroRegistrado[]>([])
   const [error, setError] = useState<string | null>(null)
   const [cargando, setCargando] = useState(true)
 
@@ -72,26 +123,38 @@ export function DetalleCliente({ clienteId, nombreCliente, onCerrar, onCobroRegi
   const [registrando, setRegistrando] = useState(false)
   const [errorCobro, setErrorCobro] = useState<string | null>(null)
 
-  async function cargarFacturas() {
+  async function cargar() {
     setCargando(true)
-    const { data, error } = await supabase
-      .from('v_facturas_saldo')
-      .select('*')
-      .eq('cliente_id', clienteId)
-      .eq('anulada', false)
-      .order('fecha_vencimiento')
 
-    if (error) setError(error.message)
-    else setFacturas(data ?? [])
+    const [fact, cob] = await Promise.all([
+      supabase
+        .from('v_facturas_saldo')
+        .select('*')
+        .eq('cliente_id', clienteId)
+        .eq('anulada', false)
+        .order('fecha_vencimiento'),
+      supabase
+        .from('cobros')
+        .select('*')
+        .eq('cliente_id', clienteId)
+        .order('recibido_en', { ascending: false }),
+    ])
+
+    if (fact.error) setError(fact.error.message)
+    else setFacturas(fact.data ?? [])
+
+    setCobros(cob.data ?? [])
     setCargando(false)
   }
 
   useEffect(() => {
-    cargarFacturas()
+    cargar()
   }, [clienteId])
 
   const pendientes = facturas.filter((f) => Number(f.saldo) > 0)
   const deudaTotal = pendientes.reduce((s, f) => s + Number(f.saldo), 0)
+  const cobrosVigentes = cobros.filter((c) => c.estado !== 'anulado')
+  const totalCobrado = cobrosVigentes.reduce((s, c) => s + Number(c.monto), 0)
 
   const monto = Number(montoTexto.replace(',', '.'))
   const montoValido = montoTexto !== '' && !Number.isNaN(monto) && monto > 0
@@ -102,7 +165,8 @@ export function DetalleCliente({ clienteId, nombreCliente, onCerrar, onCobroRegi
     setErrorCobro(null)
     setRegistrando(true)
 
-    // El monto se envia como string para no perder precision en el camino.
+    // El monto viaja como string: convertirlo a number perderia precision
+    // antes de llegar al NUMERIC de Postgres.
     const { error } = await supabase.rpc('registrar_cobro', {
       p_cliente_id: clienteId,
       p_monto: montoTexto.replace(',', '.'),
@@ -113,7 +177,7 @@ export function DetalleCliente({ clienteId, nombreCliente, onCerrar, onCobroRegi
       setErrorCobro(error.message)
     } else {
       setMontoTexto('')
-      await cargarFacturas()
+      await cargar()
       onCobroRegistrado()
     }
     setRegistrando(false)
@@ -133,9 +197,9 @@ export function DetalleCliente({ clienteId, nombreCliente, onCerrar, onCobroRegi
       </p>
 
       {error && <p style={{ color: 'crimson' }}>{error}</p>}
-      {cargando && <p>Cargando facturas...</p>}
+      {cargando && <p>Cargando...</p>}
 
-      {/* ---------- Registro de cobro ---------- */}
+      {/* ---------- Registrar cobro ---------- */}
       {pendientes.length > 0 && (
         <section
           style={{
@@ -154,7 +218,7 @@ export function DetalleCliente({ clienteId, nombreCliente, onCerrar, onCobroRegi
               placeholder="Monto recibido"
               value={montoTexto}
               onChange={(e) => setMontoTexto(e.target.value)}
-              style={{ flex: 1, padding: 8, fontSize: 16 }}
+              style={{ flex: 1, padding: 8, fontSize: 16, minWidth: 0 }}
             />
             <select
               value={medio}
@@ -168,12 +232,11 @@ export function DetalleCliente({ clienteId, nombreCliente, onCerrar, onCobroRegi
 
           {excede && (
             <p style={{ color: '#dc2626', fontSize: 13, margin: '4px 0' }}>
-              Excede la deuda en {dinero(monto - deudaTotal)}. El sistema no permite
-              registrar un cobro mayor a lo adeudado.
+              Excede la deuda en {dinero(monto - deudaTotal)}. No se permite registrar
+              un cobro mayor a lo adeudado.
             </p>
           )}
 
-          {/* Previsualizacion: que va a pasar si confirma */}
           {reparto.length > 0 && (
             <div
               style={{
@@ -184,18 +247,19 @@ export function DetalleCliente({ clienteId, nombreCliente, onCerrar, onCobroRegi
                 fontSize: 13,
               }}
             >
-              <strong style={{ display: 'block', marginBottom: 4 }}>
-                Se aplicaria asi:
-              </strong>
+              <strong style={{ display: 'block', marginBottom: 4 }}>Se aplicaria asi:</strong>
               {reparto.map((r) => (
-                <div key={r.numero} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <div
+                  key={r.numero}
+                  style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}
+                >
                   <span>
                     {r.numero}
                     {r.saldoResultante === 0 && (
                       <span style={{ color: '#16a34a', fontWeight: 600 }}> (se salda)</span>
                     )}
                   </span>
-                  <span>
+                  <span style={{ whiteSpace: 'nowrap' }}>
                     {dinero(r.aplicar)}
                     {r.saldoResultante > 0 && (
                       <span style={{ color: '#666' }}> · queda {dinero(r.saldoResultante)}</span>
@@ -246,7 +310,7 @@ export function DetalleCliente({ clienteId, nombreCliente, onCerrar, onCobroRegi
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-              <div>
+              <div style={{ minWidth: 0 }}>
                 <strong>{f.numero}</strong>
                 <div style={{ fontSize: 12, color: '#666' }}>
                   Vence {fecha(f.fecha_vencimiento)}
@@ -274,6 +338,97 @@ export function DetalleCliente({ clienteId, nombreCliente, onCerrar, onCobroRegi
           </article>
         )
       })}
+
+      {/* ---------- Historial de cobros ---------- */}
+      {cobros.length > 0 && (
+        <>
+          <h3 style={{ fontSize: 15, marginTop: 24 }}>
+            Cobros registrados
+            <span style={{ fontWeight: 400, color: '#666', fontSize: 13 }}>
+              {' '}
+              · total {dinero(totalCobrado)}
+            </span>
+          </h3>
+
+          {cobros.map((c) => {
+            const est = estiloEstado(c)
+            return (
+              <article
+                key={c.id}
+                style={{
+                  border: `1px solid ${est.borde}`,
+                  background: est.fondo,
+                  borderRadius: 8,
+                  padding: 10,
+                  marginBottom: 6,
+                  opacity: c.estado === 'anulado' ? 0.6 : 1,
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <span
+                      style={{
+                        display: 'inline-block',
+                        fontSize: 11,
+                        fontWeight: 700,
+                        color: est.color,
+                        border: `1px solid ${est.borde}`,
+                        borderRadius: 999,
+                        padding: '1px 8px',
+                        background: '#fff',
+                      }}
+                    >
+                      {est.etiqueta}
+                    </span>
+
+                    <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
+                      Recibido {fecha(c.recibido_en)}
+                    </div>
+
+                    {c.deposito_en && (
+                      <div style={{ fontSize: 12, color: '#666' }}>
+                        Depositado {fecha(c.deposito_en)}
+                        {c.deposito_banco && ` · ${c.deposito_banco}`}
+                      </div>
+                    )}
+
+                    {c.deposito_comprobante && (
+                      <div style={{ fontSize: 11, color: '#9ca3af' }}>
+                        Comprobante {c.deposito_comprobante}
+                      </div>
+                    )}
+
+                    {c.medio === 'efectivo' && c.estado === 'recibido' && (
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: '#92400e',
+                          fontWeight: 600,
+                          marginTop: 2,
+                        }}
+                      >
+                        Pendiente de depositar
+                      </div>
+                    )}
+                  </div>
+
+                  <div
+                    style={{
+                      textAlign: 'right',
+                      whiteSpace: 'nowrap',
+                      fontSize: 16,
+                      fontWeight: 700,
+                      color: est.color,
+                    }}
+                  >
+                    {dinero(c.monto)}
+                  </div>
+                </div>
+              </article>
+            )
+          })}
+        </>
+      )}
     </div>
   )
 }
