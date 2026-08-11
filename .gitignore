@@ -1,0 +1,25 @@
+﻿# Dependencias
+node_modules/
+
+# Variables de entorno: NUNCA van al repositorio
+.env
+.env.local
+.env.*.local
+
+# Compilados
+dist/
+build/
+
+# Supabase local
+supabase/.branches/
+supabase/.temp/
+
+# Editor
+.vscode/
+.idea/
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+supabase/snippets/
