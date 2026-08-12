@@ -9,6 +9,7 @@ import { NuevoCliente } from './componentes/NuevoCliente'
 import { NuevaFactura } from './componentes/NuevaFactura'
 import { EditarCliente } from './componentes/EditarCliente'
 import { EditarFactura } from './componentes/EditarFactura'
+import { Acceso } from './componentes/Acceso'
 
 type Rol = 'vendedor' | 'supervisor' | 'administrador'
 
@@ -26,46 +27,7 @@ export default function App() {
   }, [])
 
   if (cargando) return <p style={{ padding: 24 }}>Cargando...</p>
-  return sesion ? <Enrutador sesion={sesion} /> : <Login />
-}
-
-function Login() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [enviando, setEnviando] = useState(false)
-
-  async function entrar() {
-    setError(null)
-    setEnviando(true)
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) setError(error.message)
-    setEnviando(false)
-  }
-
-  return (
-    <div style={{ maxWidth: 320, margin: '80px auto', fontFamily: 'system-ui' }}>
-      <h1>Cartera</h1>
-      <input
-        type="email"
-        placeholder="Correo"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        style={{ width: '100%', padding: 8, marginBottom: 8 }}
-      />
-      <input
-        type="password"
-        placeholder="Contrasena"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        style={{ width: '100%', padding: 8, marginBottom: 8 }}
-      />
-      <button onClick={entrar} disabled={enviando} style={{ width: '100%', padding: 8 }}>
-        {enviando ? 'Entrando...' : 'Entrar'}
-      </button>
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
-    </div>
-  )
+  return sesion ? <Enrutador sesion={sesion} /> : <Acceso />
 }
 
 type ClienteBase = { id: string; nombre_comercial: string }
