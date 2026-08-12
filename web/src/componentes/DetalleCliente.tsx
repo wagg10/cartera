@@ -38,6 +38,8 @@ type Props = {
    * es evitar mostrar un boton que fallaria al pulsarlo.
    */
   soloLectura?: boolean
+  /** Si se pasa, cada factura muestra un boton para editarla. */
+  onEditarFactura?: (facturaId: string) => void
 }
 
 type Reparto = {
@@ -120,6 +122,7 @@ export function DetalleCliente({
   onCerrar,
   onCobroRegistrado,
   soloLectura = false,
+  onEditarFactura,
 }: Props) {
   const [facturas, setFacturas] = useState<FacturaSaldo[]>([])
   const [cobros, setCobros] = useState<CobroRegistrado[]>([])
@@ -356,6 +359,14 @@ export function DetalleCliente({
                   <div style={{ fontSize: 11, color: '#666' }}>
                     de {dinero(f.monto_total)} · abonado {dinero(f.monto_aplicado)}
                   </div>
+                )}
+                {onEditarFactura && (
+                  <button
+                    onClick={() => onEditarFactura(f.id)}
+                    style={{ marginTop: 4, fontSize: 11, padding: '2px 8px' }}
+                  >
+                    Editar
+                  </button>
                 )}
               </div>
             </div>
