@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { dinero } from '../lib/formato'
+import { Campo, TituloForm, MensajeError, entrada, entradaError, botonPrimario, botonVolver } from './ui'
 
 type Props = {
   vendedorId: string
@@ -10,7 +11,6 @@ type Props = {
   onCreada: () => void
 }
 
-/** Fecha de hoy en formato YYYY-MM-DD, para los campos date. */
 function hoyISO(): string {
   return new Date().toISOString().slice(0, 10)
 }
@@ -22,33 +22,26 @@ export function NuevaFactura({
   onCerrar,
   onCreada,
 }: Props) {
-  // El numero se copia de la factura fisica que emite la empresa: la app no
-  // lo genera. Inventar un numero propio romperia la trazabilidad con el
-  // sistema corporativo, que es justo lo que el vendedor necesita al reclamar.
+  // El número se copia de la factura física que emite la empresa: la app no
+  // lo genera. Inventar un número propio rompería la trazabilidad con el
+  // sistema corporativo, que es lo que el vendedor necesita al reclamar.
   const [numero, setNumero] = useState('')
   const [emision, setEmision] = useState(hoyISO())
   const [vencimiento, setVencimiento] = useState('')
   const [montoTexto, setMontoTexto] = useState('')
-
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const monto = Number(montoTexto.replace(',', '.'))
   const montoValido = montoTexto !== '' && !Number.isNaN(monto) && monto > 0
-
   const fechasValidas = vencimiento !== '' && vencimiento >= emision
-  const numeroValido = numero.trim().length > 0
+  const puedeGuardar = numero.trim() !== '' && montoValido && fechasValidas && !guardando
 
-  const puedeGuardar = numeroValido && montoValido && fechasValidas && !guardando
-
-  // El plazo se negocia con cada cliente, no sigue una regla fija.
-  // Se muestra solo como referencia de lo que se acaba de elegir.
-  const diasPlazo =
-    fechasValidas
-      ? Math.round(
-          (new Date(vencimiento).getTime() - new Date(emision).getTime()) / 86400000,
-        )
-      : null
+  // El plazo se negocia con cada cliente, no sigue una regla fija: se muestra
+  // solo como confirmación de lo que se acaba de elegir.
+  const diasPlazo = fechasValidas
+    ? Math.round((new Date(vencimiento).getTime() - new Date(emision).getTime()) / 86400000)
+    : null
 
   async function guardar() {
     setError(null)
@@ -61,7 +54,7 @@ export function NuevaFactura({
       fecha_emision: emision,
       fecha_vencimiento: vencimiento,
       // Como string: es NUMERIC(18,4) en la base y convertirlo a number
-      // perderia precision antes de llegar.
+      // perdería precisión antes de llegar.
       monto_total: montoTexto.replace(',', '.'),
     })
 
@@ -79,96 +72,67 @@ export function NuevaFactura({
   }
 
   return (
-    <div style={{ fontFamily: 'system-ui' }}>
-      <button onClick={onCerrar} style={{ marginBottom: 12 }}>
-        &larr; Cancelar
+    <div>
+      <button onClick={onCerrar} className={botonVolver}>
+        ← Cancelar
       </button>
 
-      <h2 style={{ margin: '0 0 2px', fontSize: 20 }}>Nueva factura</h2>
-      <p style={{ margin: 0, color: '#666', fontSize: 14 }}>{nombreCliente}</p>
+      <TituloForm titulo="Nueva factura" subtitulo={nombreCliente} />
 
-      <label style={etiqueta}>Numero de factura *</label>
-      <input
-        type="text"
-        value={numero}
-        onChange={(e) => setNumero(e.target.value)}
-        placeholder="FAC-001-2451"
-        style={campo}
-      />
-      <p style={{ ...aviso, color: '#666' }}>Copialo de la factura fisica.</p>
+      <div className="bg-white border border-borde rounded-xl p-4">
+        <Campo etiqueta="Número de factura" requerido ayuda="Copialo de la factura física.">
+          <input
+            value={numero}
+            onChange={(e) => setNumero(e.target.value)}
+            placeholder="FAC-001-2451"
+            className={entrada}
+          />
+        </Campo>
 
-      <label style={etiqueta}>Monto total *</label>
-      <input
-        type="text"
-        inputMode="decimal"
-        value={montoTexto}
-        onChange={(e) => setMontoTexto(e.target.value)}
-        placeholder="5000.00"
-        style={campo}
-      />
-      {montoValido && (
-        <p style={{ ...aviso, color: '#666' }}>{dinero(monto)}</p>
-      )}
+        <Campo etiqueta="Monto total" requerido ayuda={montoValido ? dinero(monto) : undefined}>
+          <input
+            inputMode="decimal"
+            value={montoTexto}
+            onChange={(e) => setMontoTexto(e.target.value)}
+            placeholder="5000.00"
+            className={`${entrada} cifra text-lg`}
+          />
+        </Campo>
 
-      <label style={etiqueta}>Fecha de emision *</label>
-      <input
-        type="date"
-        value={emision}
-        onChange={(e) => setEmision(e.target.value)}
-        style={campo}
-      />
+        <Campo etiqueta="Fecha de emisión" requerido>
+          <input
+            type="date"
+            value={emision}
+            onChange={(e) => setEmision(e.target.value)}
+            className={entrada}
+          />
+        </Campo>
 
-      <label style={etiqueta}>Fecha de vencimiento *</label>
-      <input
-        type="date"
-        value={vencimiento}
-        min={emision}
-        onChange={(e) => setVencimiento(e.target.value)}
-        style={{
-          ...campo,
-          borderColor: vencimiento !== '' && !fechasValidas ? '#dc2626' : '#d1d5db',
-        }}
-      />
+        <Campo
+          etiqueta="Fecha de vencimiento"
+          requerido
+          error={
+            vencimiento !== '' && !fechasValidas
+              ? 'No puede ser anterior a la emisión.'
+              : null
+          }
+          ayuda={diasPlazo !== null ? `Plazo acordado: ${diasPlazo} días.` : undefined}
+        >
+          <input
+            type="date"
+            value={vencimiento}
+            min={emision}
+            onChange={(e) => setVencimiento(e.target.value)}
+            className={`${entrada} ${vencimiento !== '' && !fechasValidas ? entradaError : ''}`}
+          />
+        </Campo>
 
-      {vencimiento !== '' && !fechasValidas && (
-        <p style={aviso}>El vencimiento no puede ser anterior a la emision.</p>
-      )}
+        <button onClick={guardar} disabled={!puedeGuardar} className={`${botonPrimario} mt-5`}>
+          {guardando ? 'Guardando…' : 'Guardar factura'}
+        </button>
 
-      {diasPlazo !== null && (
-        <p style={{ ...aviso, color: '#666' }}>
-          Plazo acordado: {diasPlazo} dias.
-        </p>
-      )}
-
-      <button
-        onClick={guardar}
-        disabled={!puedeGuardar}
-        style={{ width: '100%', padding: 10, fontSize: 15, marginTop: 14 }}
-      >
-        {guardando ? 'Guardando...' : 'Guardar factura'}
-      </button>
-
-      {error && <p style={{ color: '#dc2626', fontSize: 13 }}>{error}</p>}
+        {error && <MensajeError>{error}</MensajeError>}
+      </div>
     </div>
   )
-}
-
-const etiqueta: React.CSSProperties = {
-  display: 'block',
-  fontSize: 13,
-  fontWeight: 600,
-  marginTop: 10,
-  marginBottom: 3,
-}
-
-const campo: React.CSSProperties = {
-  width: '100%',
-  padding: 8,
-  fontSize: 15,
-}
-
-const aviso: React.CSSProperties = {
-  fontSize: 12,
-  color: '#dc2626',
-  margin: '3px 0 0',
 }

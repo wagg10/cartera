@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { Campo, TituloForm, MensajeError, entrada, entradaError, botonPrimario, botonVolver } from './ui'
 
 type Ruta = { id: string; nombre: string }
 
@@ -22,35 +23,28 @@ type Props = {
 function validarIdentificacion(id: string): string | null {
   const limpio = id.trim()
   if (limpio === '') return null
-
-  if (!/^\d{10}$|^\d{13}$/.test(limpio)) {
-    return 'Debe tener 10 digitos (cedula) o 13 (RUC).'
-  }
+  if (!/^\d{10}$|^\d{13}$/.test(limpio)) return 'Debe tener 10 dígitos (cédula) o 13 (RUC).'
   const provincia = Number(limpio.slice(0, 2))
-  if (provincia < 1 || provincia > 24) {
-    return 'Los dos primeros digitos no corresponden a una provincia.'
-  }
+  if (provincia < 1 || provincia > 24) return 'Los dos primeros dígitos no son una provincia válida.'
   return null
 }
 
 /**
- * Edicion de los datos de contacto de un cliente.
+ * Edición de los datos de contacto de un cliente.
  *
- * Estos campos no afectan ningun calculo de dinero, asi que se pueden corregir
- * libremente. Las restricciones fuertes estan sobre facturas y cobros, que si
- * forman parte del registro contable.
+ * Estos campos no afectan ningún cálculo de dinero, así que se corrigen
+ * libremente. Las restricciones fuertes están sobre facturas y cobros, que
+ * sí forman parte del registro contable.
  */
 export function EditarCliente({ clienteId, onCerrar, onGuardado }: Props) {
   const [rutas, setRutas] = useState<Ruta[]>([])
   const [cargando, setCargando] = useState(true)
-
   const [nombre, setNombre] = useState('')
   const [identificacion, setIdentificacion] = useState('')
   const [direccion, setDireccion] = useState('')
   const [telefono, setTelefono] = useState('')
   const [rutaId, setRutaId] = useState('')
   const [limite, setLimite] = useState('')
-
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -66,7 +60,8 @@ export function EditarCliente({ clienteId, onCerrar, onGuardado }: Props) {
         setDireccion(c.direccion ?? '')
         setTelefono(c.telefono ?? '')
         setRutaId(c.ruta_id ?? '')
-        setLimite(c.limite_credito ?? '')
+        // Puede llegar como número desde Postgres: se normaliza a texto.
+        setLimite(c.limite_credito != null ? String(c.limite_credito) : '')
       }
       setRutas(rut.data ?? [])
       setCargando(false)
@@ -94,9 +89,7 @@ export function EditarCliente({ clienteId, onCerrar, onGuardado }: Props) {
 
     if (error) {
       setError(
-        error.code === '23505'
-          ? 'Ya tenes otro cliente con esa identificacion.'
-          : error.message,
+        error.code === '23505' ? 'Ya tenés otro cliente con esa identificación.' : error.message,
       )
     } else {
       onGuardado()
@@ -105,80 +98,75 @@ export function EditarCliente({ clienteId, onCerrar, onGuardado }: Props) {
     setGuardando(false)
   }
 
-  if (cargando) return <p>Cargando...</p>
+  if (cargando) return <p className="text-sm text-tinta-60">Cargando…</p>
 
   return (
-    <div style={{ fontFamily: 'system-ui' }}>
-      <button onClick={onCerrar} style={{ marginBottom: 12 }}>
-        &larr; Cancelar
+    <div>
+      <button onClick={onCerrar} className={botonVolver}>
+        ← Cancelar
       </button>
 
-      <h2 style={{ margin: '0 0 12px', fontSize: 20 }}>Editar cliente</h2>
+      <TituloForm titulo="Editar cliente" />
 
-      <label style={etiqueta}>Nombre comercial *</label>
-      <input value={nombre} onChange={(e) => setNombre(e.target.value)} style={campo} />
+      <div className="bg-white border border-borde rounded-xl p-4">
+        <Campo etiqueta="Nombre comercial" requerido>
+          <input value={nombre} onChange={(e) => setNombre(e.target.value)} className={entrada} />
+        </Campo>
 
-      <label style={etiqueta}>RUC o cedula</label>
-      <input
-        inputMode="numeric"
-        value={identificacion}
-        onChange={(e) => setIdentificacion(e.target.value)}
-        style={{ ...campo, borderColor: errorId ? '#dc2626' : '#d1d5db' }}
-      />
-      {errorId && <p style={aviso}>{errorId}</p>}
+        <Campo etiqueta="RUC o cédula" error={errorId}>
+          <input
+            inputMode="numeric"
+            value={identificacion}
+            onChange={(e) => setIdentificacion(e.target.value)}
+            className={`${entrada} ${errorId ? entradaError : ''}`}
+          />
+        </Campo>
 
-      <label style={etiqueta}>Direccion</label>
-      <input value={direccion} onChange={(e) => setDireccion(e.target.value)} style={campo} />
+        <Campo etiqueta="Dirección">
+          <input
+            value={direccion}
+            onChange={(e) => setDireccion(e.target.value)}
+            className={entrada}
+          />
+        </Campo>
 
-      <label style={etiqueta}>Telefono</label>
-      <input
-        type="tel"
-        inputMode="tel"
-        value={telefono}
-        onChange={(e) => setTelefono(e.target.value)}
-        style={campo}
-      />
+        <Campo etiqueta="Teléfono">
+          <input
+            type="tel"
+            inputMode="tel"
+            value={telefono}
+            onChange={(e) => setTelefono(e.target.value)}
+            className={entrada}
+          />
+        </Campo>
 
-      <label style={etiqueta}>Ruta</label>
-      <select value={rutaId} onChange={(e) => setRutaId(e.target.value)} style={campo}>
-        <option value="">Sin ruta asignada</option>
-        {rutas.map((r) => (
-          <option key={r.id} value={r.id}>
-            {r.nombre}
-          </option>
-        ))}
-      </select>
+        <Campo etiqueta="Ruta">
+          <select value={rutaId} onChange={(e) => setRutaId(e.target.value)} className={entrada}>
+            <option value="">Sin ruta asignada</option>
+            {rutas.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.nombre}
+              </option>
+            ))}
+          </select>
+        </Campo>
 
-      <label style={etiqueta}>Limite de credito</label>
-      <input
-        inputMode="decimal"
-        value={limite}
-        onChange={(e) => setLimite(e.target.value)}
-        placeholder="Opcional"
-        style={campo}
-      />
+        <Campo etiqueta="Límite de crédito">
+          <input
+            inputMode="decimal"
+            value={limite}
+            onChange={(e) => setLimite(e.target.value)}
+            placeholder="Opcional"
+            className={`${entrada} cifra`}
+          />
+        </Campo>
 
-      <button
-        onClick={guardar}
-        disabled={!puedeGuardar}
-        style={{ width: '100%', padding: 10, fontSize: 15, marginTop: 14 }}
-      >
-        {guardando ? 'Guardando...' : 'Guardar cambios'}
-      </button>
+        <button onClick={guardar} disabled={!puedeGuardar} className={`${botonPrimario} mt-5`}>
+          {guardando ? 'Guardando…' : 'Guardar cambios'}
+        </button>
 
-      {error && <p style={{ color: '#dc2626', fontSize: 13 }}>{error}</p>}
+        {error && <MensajeError>{error}</MensajeError>}
+      </div>
     </div>
   )
 }
-
-const etiqueta: React.CSSProperties = {
-  display: 'block',
-  fontSize: 13,
-  fontWeight: 600,
-  marginTop: 10,
-  marginBottom: 3,
-}
-
-const campo: React.CSSProperties = { width: '100%', padding: 8, fontSize: 15 }
-
-const aviso: React.CSSProperties = { fontSize: 12, color: '#dc2626', margin: '3px 0 0' }

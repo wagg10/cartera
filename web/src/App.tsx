@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
-import { dinero, colorMora, textoMora } from './lib/formato'
+import { dinero } from './lib/formato'
 import { DetalleCliente } from './componentes/DetalleCliente'
 import { EfectivoEnTransito, type EfectivoPendiente } from './componentes/EfectivoEnTransito'
 import { PanelSupervisor } from './componentes/PanelSupervisor'
@@ -26,7 +26,11 @@ export default function App() {
     return () => escucha.subscription.unsubscribe()
   }, [])
 
-  if (cargando) return <p style={{ padding: 24 }}>Cargando...</p>
+  if (cargando) {
+    return (
+      <div className="min-h-screen grid place-items-center text-tinta-60">Cargando…</div>
+    )
+  }
   return sesion ? <Enrutador sesion={sesion} /> : <Acceso />
 }
 
@@ -51,52 +55,55 @@ function Enrutador({ sesion }: { sesion: Session }) {
       })
   }, [sesion.user.id])
 
-  if (cargando) return <p style={{ padding: 24 }}>Cargando perfil...</p>
+  if (cargando) {
+    return <div className="min-h-screen grid place-items-center text-tinta-60">Cargando…</div>
+  }
 
   const esSupervisor = rol === 'supervisor'
 
   return (
-    <div style={{ maxWidth: 620, margin: '0 auto', padding: 16, fontFamily: 'system-ui' }}>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1 style={{ margin: 0, fontSize: 22 }}>Cartera</h1>
-        <button onClick={() => supabase.auth.signOut()}>Salir</button>
+    <div className="min-h-screen bg-fondo">
+      {/* Encabezado fijo: identidad y salida siempre al alcance del pulgar */}
+      <header className="bg-marca-700 sticky top-0 z-10">
+        <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="font-display text-lg font-bold text-white leading-none">Cartera</h1>
+            <p className="text-marca-100 text-xs mt-0.5 truncate">
+              {nombre || sesion.user.email}
+              {esSupervisor && (
+                <span className="ml-1.5 px-1.5 py-px rounded-full bg-white/15 text-[10px] font-semibold">
+                  Supervisor
+                </span>
+              )}
+            </p>
+          </div>
+          <button
+            onClick={() => supabase.auth.signOut()}
+            className="text-marca-100 text-sm hover:text-white shrink-0"
+          >
+            Salir
+          </button>
+        </div>
       </header>
 
-      <p style={{ color: '#666', fontSize: 13, marginTop: 4 }}>
-        {nombre || sesion.user.email}
-        {esSupervisor && (
-          <span
-            style={{
-              marginLeft: 6,
-              fontSize: 11,
-              color: '#1d4ed8',
-              border: '1px solid #93c5fd',
-              borderRadius: 999,
-              padding: '1px 8px',
-            }}
-          >
-            Supervisor
-          </span>
+      <main className="max-w-lg mx-auto px-4 py-4 pb-16">
+        {abierto ? (
+          <VistaDetalle
+            cliente={abierto}
+            vendedorId={sesion.user.id}
+            soloLectura={esSupervisor}
+            onCerrar={() => setAbierto(null)}
+          />
+        ) : esSupervisor ? (
+          <PanelSupervisor onVerCliente={setAbierto} />
+        ) : (
+          <PanelVendedor vendedorId={sesion.user.id} onVerCliente={setAbierto} />
         )}
-      </p>
-
-      {abierto ? (
-        <VistaDetalle
-          cliente={abierto}
-          vendedorId={sesion.user.id}
-          soloLectura={esSupervisor}
-          onCerrar={() => setAbierto(null)}
-        />
-      ) : esSupervisor ? (
-        <PanelSupervisor onVerCliente={setAbierto} />
-      ) : (
-        <PanelVendedor vendedorId={sesion.user.id} onVerCliente={setAbierto} />
-      )}
+      </main>
     </div>
   )
 }
 
-/** Que subpantalla se muestra dentro del detalle de un cliente. */
 type ModoDetalle =
   | { tipo: 'ver' }
   | { tipo: 'nuevaFactura' }
@@ -115,7 +122,6 @@ function VistaDetalle({
   onCerrar: () => void
 }) {
   const [modo, setModo] = useState<ModoDetalle>({ tipo: 'ver' })
-  // Cambiar esta version fuerza a DetalleCliente a recargar sus datos.
   const [version, setVersion] = useState(0)
   const recargar = () => setVersion((v) => v + 1)
 
@@ -154,9 +160,13 @@ function VistaDetalle({
   return (
     <>
       {!soloLectura && (
-        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 12 }}>
-          <button onClick={() => setModo({ tipo: 'editarCliente' })}>Editar cliente</button>
-          <button onClick={() => setModo({ tipo: 'nuevaFactura' })}>+ Nueva factura</button>
+        <div className="flex gap-2 justify-end mb-3">
+          <button onClick={() => setModo({ tipo: 'editarCliente' })} className={botonSec}>
+            Editar cliente
+          </button>
+          <button onClick={() => setModo({ tipo: 'nuevaFactura' })} className={botonPri}>
+            + Factura
+          </button>
         </div>
       )}
 
@@ -193,6 +203,23 @@ type ClienteListado = {
 }
 
 type Pestana = 'cobrar' | 'clientes'
+
+/**
+ * Presentacion de la mora.
+ *
+ * En este negocio los dias vencidos tienen consecuencia directa sobre el
+ * sueldo del vendedor: si un cliente no paga, se lo descuentan. Por eso los
+ * dias son el dato dominante de cada fila, por encima del monto. Es la
+ * inversion deliberada de la jerarquia habitual en apps financieras.
+ */
+function estiloMora(dias: number | null) {
+  if (dias === null || dias < 0)
+    return { color: 'text-tinta-40', barra: 'bg-tinta-40', etiqueta: 'Al día' }
+  if (dias === 0) return { color: 'text-mora-1', barra: 'bg-mora-1', etiqueta: 'Vence hoy' }
+  if (dias <= 30) return { color: 'text-mora-1', barra: 'bg-mora-1', etiqueta: 'días' }
+  if (dias <= 60) return { color: 'text-mora-2', barra: 'bg-mora-2', etiqueta: 'días' }
+  return { color: 'text-mora-3', barra: 'bg-mora-3', etiqueta: 'días' }
+}
 
 function PanelVendedor({
   vendedorId,
@@ -242,15 +269,22 @@ function PanelVendedor({
 
   return (
     <>
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
+      {error && (
+        <p className="text-sm text-mora-3 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
+          {error}
+        </p>
+      )}
 
-      <nav style={{ display: 'flex', gap: 4, margin: '12px 0' }}>
-        <button onClick={() => setPestana('cobrar')} style={pestana === 'cobrar' ? tabActiva : tab}>
-          A quien cobrar ({clientes.length})
+      <nav className="flex gap-1 p-1 bg-marca-100/60 rounded-xl mb-4">
+        <button
+          onClick={() => setPestana('cobrar')}
+          className={pestana === 'cobrar' ? pestanaActiva : pestanaInactiva}
+        >
+          Cobrar ({clientes.length})
         </button>
         <button
           onClick={() => setPestana('clientes')}
-          style={pestana === 'clientes' ? tabActiva : tab}
+          className={pestana === 'clientes' ? pestanaActiva : pestanaInactiva}
         >
           Clientes ({todos.length})
         </button>
@@ -260,100 +294,124 @@ function PanelVendedor({
         <>
           <EfectivoEnTransito pendientes={efectivo} onDepositado={cargar} />
 
-          <h2 style={{ fontSize: 16 }}>Total por cobrar: {dinero(totalCartera)}</h2>
+          <div className="flex items-baseline justify-between mb-3">
+            <span className="text-xs font-semibold text-tinta-60 uppercase tracking-wide">
+              Total por cobrar
+            </span>
+            <span className="cifra text-2xl font-bold">{dinero(totalCartera)}</span>
+          </div>
 
           {clientes.length === 0 && !error && (
-            <p style={{ color: '#666' }}>
-              No hay clientes con deuda pendiente. Registra facturas desde la pestana Clientes.
+            <p className="text-sm text-tinta-60 bg-white border border-borde rounded-xl px-4 py-6 text-center">
+              No hay clientes con deuda pendiente.
+              <br />
+              Registrá facturas desde la pestaña Clientes.
             </p>
           )}
 
-          {clientes.map((c) => (
-            <article key={c.id} onClick={() => onVerCliente(c)} style={tarjeta(c.dias_mora_maxima)}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-                <div style={{ minWidth: 0 }}>
-                  <strong>{c.nombre_comercial}</strong>
-                  {c.ruta_nombre && (
-                    <span style={{ color: '#666', fontSize: 12 }}> · {c.ruta_nombre}</span>
-                  )}
-                  <div
-                    style={{ fontSize: 13, color: colorMora(c.dias_mora_maxima), fontWeight: 600 }}
-                  >
-                    {textoMora(c.dias_mora_maxima)}
-                  </div>
-                  {c.excede_limite && (
-                    <div style={{ fontSize: 12, color: '#dc2626' }}>
-                      Supera el limite de credito
-                    </div>
-                  )}
-                </div>
+          <div className="space-y-2">
+            {clientes.map((c) => {
+              const m = estiloMora(c.dias_mora_maxima)
+              const dias = c.dias_mora_maxima
+              const enMora = dias !== null && dias > 0
 
-                <div style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                  <div style={{ fontSize: 18, fontWeight: 700 }}>{dinero(c.saldo_total)}</div>
-                  <div style={{ fontSize: 12, color: '#666' }}>
-                    {c.facturas_pendientes} factura(s)
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => onVerCliente(c)}
+                  className="w-full text-left bg-white border border-borde rounded-xl overflow-hidden
+                             hover:border-marca-500 active:scale-[0.995] transition
+                             focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca-600"
+                >
+                  <div className="flex">
+                    {/* Franja de urgencia */}
+                    <div className={`w-1.5 shrink-0 ${m.barra}`} />
+
+                    <div className="flex-1 min-w-0 p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        {/* Dias de mora: el dato dominante */}
+                        <div className="shrink-0 text-center w-14">
+                          <div className={`cifra text-3xl font-bold leading-none ${m.color}`}>
+                            {enMora ? dias : '—'}
+                          </div>
+                          <div className={`text-[10px] font-semibold uppercase mt-0.5 ${m.color}`}>
+                            {enMora ? 'días' : m.etiqueta}
+                          </div>
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-[15px] leading-tight truncate">
+                            {c.nombre_comercial}
+                          </div>
+                          <div className="text-xs text-tinta-60 mt-0.5">
+                            {c.facturas_pendientes} factura
+                            {c.facturas_pendientes !== 1 && 's'}
+                            {c.ruta_nombre && ` · ${c.ruta_nombre}`}
+                          </div>
+                          {c.excede_limite && (
+                            <div className="text-xs text-mora-3 font-medium mt-0.5">
+                              Supera el límite de crédito
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="cifra text-lg font-bold shrink-0 tabular-nums">
+                          {dinero(c.saldo_total)}
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
-            </article>
-          ))}
+                </button>
+              )
+            })}
+          </div>
         </>
       ) : (
         <>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-            <button onClick={() => setCreandoCliente(true)}>+ Nuevo cliente</button>
+          <div className="flex justify-end mb-3">
+            <button onClick={() => setCreandoCliente(true)} className={botonPri}>
+              + Nuevo cliente
+            </button>
           </div>
 
-          {todos.length === 0 && <p style={{ color: '#666' }}>Todavia no tenes clientes registrados.</p>}
+          {todos.length === 0 && (
+            <p className="text-sm text-tinta-60 bg-white border border-borde rounded-xl px-4 py-6 text-center">
+              Todavía no tenés clientes registrados.
+            </p>
+          )}
 
-          {todos.map((c) => (
-            <article
-              key={c.id}
-              onClick={() => onVerCliente(c)}
-              style={{
-                border: '1px solid #e5e7eb',
-                borderRadius: 8,
-                padding: 12,
-                marginBottom: 6,
-                cursor: 'pointer',
-              }}
-            >
-              <strong>{c.nombre_comercial}</strong>
-              <div style={{ fontSize: 12, color: '#666' }}>
-                {c.identificacion ?? 'Sin identificacion'}
-                {c.telefono && ` · ${c.telefono}`}
-              </div>
-            </article>
-          ))}
+          <div className="space-y-2">
+            {todos.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => onVerCliente(c)}
+                className="w-full text-left bg-white border border-borde rounded-xl p-3
+                           hover:border-marca-500 active:scale-[0.995] transition
+                           focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca-600"
+              >
+                <div className="font-semibold text-[15px]">{c.nombre_comercial}</div>
+                <div className="text-xs text-tinta-60 mt-0.5">
+                  {c.identificacion ?? 'Sin identificación'}
+                  {c.telefono && ` · ${c.telefono}`}
+                </div>
+              </button>
+            ))}
+          </div>
         </>
       )}
     </>
   )
 }
 
-function tarjeta(dias: number | null): React.CSSProperties {
-  return {
-    border: '1px solid #e5e7eb',
-    borderLeftWidth: 4,
-    borderLeftColor: colorMora(dias),
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 8,
-    cursor: 'pointer',
-  }
-}
+const pestanaActiva =
+  'flex-1 py-2 rounded-lg bg-white text-marca-700 font-semibold text-sm shadow-sm transition'
 
-const tab: React.CSSProperties = {
-  flex: 1,
-  padding: 8,
-  fontSize: 13,
-  background: '#fff',
-  color: '#666',
-}
+const pestanaInactiva = 'flex-1 py-2 rounded-lg text-tinta-60 font-medium text-sm transition'
 
-const tabActiva: React.CSSProperties = {
-  ...tab,
-  background: '#111827',
-  color: '#fff',
-  borderColor: '#111827',
-}
+export const botonPri =
+  'px-3 py-2 rounded-lg bg-marca-600 text-white font-semibold text-sm ' +
+  'hover:bg-marca-700 active:scale-[0.98] transition disabled:opacity-40'
+
+export const botonSec =
+  'px-3 py-2 rounded-lg bg-white border border-borde text-tinta font-medium text-sm ' +
+  'hover:border-marca-500 active:scale-[0.98] transition disabled:opacity-40'

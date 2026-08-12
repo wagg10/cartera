@@ -1,42 +1,76 @@
-﻿:root {
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  line-height: 1.5;
-  color: #111827;
-  background: #ffffff;
+@import "tailwindcss";
+
+/* ============================================================================
+   Sistema de diseño de Cartera
+
+   Paleta inspirada en el rubro alimenticio ecuatoriano: verde vivo sobre
+   fondos cálidos de trigo y harina. Busca resultar familiar a quien trabaja
+   en distribución de alimentos sin imitar la identidad de ninguna empresa.
+
+   Los verdes de MARCA (identidad, botones) y los de ESTADO (factura pagada)
+   son deliberadamente distintos: si fueran iguales, el verde perdería su
+   significado de "esto está saldado".
+   ============================================================================ */
+
+@theme {
+  --font-display: "Archivo", system-ui, sans-serif;
+  --font-sans: "Inter", system-ui, sans-serif;
+
+  /* Marca */
+  --color-marca-700: #076B34;
+  --color-marca-600: #0A8341;
+  --color-marca-500: #12A452;
+  --color-marca-100: #DCF2E4;
+  --color-marca-50:  #F0FAF4;
+
+  /* Fondos cálidos, del color del trigo y la harina */
+  --color-fondo:  #F6F3EC;
+  --color-panel:  #FFFFFF;
+  --color-borde:  #E3DED2;
+
+  /* Estados. Verde distinto al de marca a propósito. */
+  --color-pagado:   #15803D;
+  --color-custodia: #B45309;
+  --color-mora-1:   #CA8A04;
+  --color-mora-2:   #EA580C;
+  --color-mora-3:   #B91C1C;
+
+  /* Texto sobre fondo cálido: neutros con una pizca de tierra,
+     un gris frío puro se ve sucio sobre crema. */
+  --color-tinta:    #1C1917;
+  --color-tinta-60: #57534E;
+  --color-tinta-40: #A8A29E;
 }
 
-* {
-  box-sizing: border-box;
-}
+@layer base {
+  html {
+    background: var(--color-fondo);
+  }
 
-body {
-  margin: 0;
-  /* Vite trae text-align: center y display: flex por defecto en el body.
-     Eso centra todo el contenido heredado y rompe cualquier layout propio. */
-  text-align: left;
-}
+  body {
+    margin: 0;
+    font-family: var(--font-sans);
+    color: var(--color-tinta);
+    -webkit-font-smoothing: antialiased;
+  }
 
-button {
-  font-family: inherit;
-  font-size: 14px;
-  cursor: pointer;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  background: #fff;
-  padding: 6px 12px;
-}
+  /* Cifras monetarias y de días.
 
-button:hover:not(:disabled) {
-  background: #f3f4f6;
-}
+     tabular-nums hace que cada dígito ocupe el mismo ancho, de modo que las
+     columnas de dinero quedan alineadas verticalmente. Es el detalle que
+     separa una tabla financiera legible de una que no lo es. */
+  .cifra {
+    font-family: var(--font-display);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
 
-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-input, select {
-  font-family: inherit;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
 }
